@@ -1,0 +1,2 @@
+JBO_Green_entire_environment.pts.gz filter=lfs diff=lfs merge=lfs -text
+JBO_Green_Tarmac.pts.gz filter=lfs diff=lfs merge=lfs -text
