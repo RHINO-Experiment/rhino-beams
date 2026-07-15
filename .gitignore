@@ -1,0 +1,24 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+real_data/
+simulated_data/
+
+.ipynb_checkpoints/
+
+# Results
+.vscode
+
+# venv
+.venv
+
+# Moment RFI
+MomentRFI
+
+test.fits
+
+#CST Beam files
+
+BeamFITS/
+
+._*
