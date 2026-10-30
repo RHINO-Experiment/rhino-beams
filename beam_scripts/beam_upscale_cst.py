@@ -6,7 +6,7 @@ import numpy as np
 import healpy as hp
 import multiprocessing
 from pyuvdata import UVBeam
-from beam_utils import parse_filename, get_UV_beam_from_txt, upscale_beam_2hpx
+from beam_scripts.beam_utils import parse_filename, get_UV_beam_from_txt, upscale_beam_2hpx, create_uvb_obj, load_npz_beams
 import os
 import argparse
 
@@ -30,6 +30,55 @@ def mp_processor(args):
                               m=hpx_beam.data_array[0,0,0])
     else:
        hpx_beam.write_beamfits(save_path+'/'+beam_string+str(freq/10**6)+'.fits')
+
+
+def mp_processor_npz(args):
+    beam_dbi, za, az, freq,nside, beam_string, save_path, cst_i, save_hp = args
+    lineaer_beam = 10**(beam_dbi/10)
+    uvb = create_uvb_obj(linear_array=lineaer_beam, az=az, za=za,cst_i=cst_i)
+    hpx_beam = upscale_beam_2hpx(uvb=uvb, nside=nside)
+    if save_hp:
+        hp.fitsfunc.write_map(filename=f"{save_path}/{beam_string}{freq}.fits",
+                                m=hpx_beam.data_array[0,0,0])
+    else:
+        hpx_beam.write_beamfits(save_path+'/'+beam_string+str(freq)+'.fits')
+    
+
+def upscale_cst_beams_and_save_npz(npz_filepath,
+                                   save_dir,
+                                   beam_label,
+                                   cst_i=False,
+                                   save_hp = True,
+                                   n_side = None):
+
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+        print('Save Path Created...')
+    else:
+        print('Save Path Exists...')
+
+    abs_dir_dbi, freqs_mhz, za, az = load_npz_beams(npz_filepath)
+
+    if n_side is None:
+        ref_sky_map = np.load('ReferenceMaps/ref_map.npy')
+        n_side = hp.get_nside(ref_sky_map)
+
+    arguments = [(beam_dbi,
+                  za,
+                  az,
+                  freq,
+                  n_side,
+                  beam_label,
+                  save_dir,
+                  cst_i,
+                  save_hp) for beam_dbi, freq in zip(abs_dir_dbi, freqs_mhz)]
+
+    with multiprocessing.Pool(processes=multiprocessing.cpu_count()) as pool:
+        _ = pool.map(mp_processor_npz, arguments)
+        print('Processed '+beam_label+'...')
+
+    print(f'Processed {npz_filepath} and saved to {save_dir}')
+
 
 def upscale_cst_beams_and_save(beam_string,
                                beam_dir,

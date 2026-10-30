@@ -58,45 +58,17 @@ def convert_spherical_coords(az_in, zen_in):
     return az_out, zen_out
 
 
-def get_UV_beam_from_txt(filepath,
-                         cst_i=False,
-                         feedname='',
-                         feedversion='',
-                         model_name='', 
-                         model_version='' ,
-                         telescope_name='',
-                         centre_freq='70e6'):
-    """
-    Returns a uvbeam object for a given frequency based on the filepath of the .txt file produces in the CST simulation
-    Input:
-        filepath: (str) Filepath of the .txt string
-    Output:
-        uvb: (uvBeam object) 
-    """
-    file = np.loadtxt(filepath, skiprows=2)
-    original_thetas = file[:,0]
-    original_phis = file[:,1] # requires conversion if CST-I
-    theta, phi = [], []
-
-    if cst_i:
-        for theta_angle, phi_angle in zip(original_thetas, original_phis): # coordinate transformation
-            p, t = convert_spherical_coords(phi_angle, theta_angle)
-            theta.append(t)
-            phi.append(p)
-    else:
-        theta, phi = original_thetas, original_phis # CST-T case
-
-    za = np.deg2rad(theta)
-    az = np.deg2rad(phi)
-    unique_theta = np.unique(theta)
-    unique_phi = np.unique(phi)
-    dir_dbi = file[:,2]
-    linear = 10**(dir_dbi/10)
-     #reshape the linear list into an array based on the za and az , sort into rows of constant za
-
-    za = np.deg2rad(unique_theta)
-    az = np.deg2rad(unique_phi)
-
+def create_uvb_obj(linear_array,
+                   az,
+                   za,
+                   cst_i=False,
+                   feedname='',
+                   azfeedname='',
+                   feedversion='',
+                   model_name='', 
+                   model_version='' ,
+                   telescope_name='',
+                   centre_freq='70e6'):
     uvb = UVBeam() # set up uvbeam object
     uvb.antenna_type = "simple"
     uvb.beam_type = "power"
@@ -104,13 +76,7 @@ def get_UV_beam_from_txt(filepath,
     uvb.Nfreqs = 1
     uvb.data_array = np.zeros((1, 1, 1, za.size, az.size))      # (Naxes_vec, 1, Nfeeds or Npols, Nfreqs, Naxes2, Naxes1)
     
-    phi_to_index = {phi: i for i,phi in enumerate(unique_phi)}
-    theta_to_index = {theta:i for i, theta in enumerate(unique_theta)}
-
-    for val, t, p in zip(linear, theta, phi):
-            theta_i = theta_to_index[t]
-            phi_i = phi_to_index[p]
-            uvb.data_array[0,0,0,theta_i, phi_i] = val
+    uvb.data_array[0,0,0,:, :]=linear_array
 
     if cst_i:
         uvb.data_array[0,0,0,0,:] = uvb.data_array[0,0,0,0,0] # fill out the zenith angles at different azimuth for cst-i
@@ -135,9 +101,86 @@ def get_UV_beam_from_txt(filepath,
     uvb.polarization_array = np.array([1])
     uvb.freq_array = np.array([float(centre_freq)])
     uvb.bandpass_array = np.array([float(1)])#set to delta function with np.ones
-    uvb.history = "Created by get_UV_beam_from_txt function:  "+str(filepath)
+    uvb.history = "Created by create_uvb_obj"
 
     uvb.check(run_check_acceptability=True)
+
+    return uvb
+
+
+def load_npz_beams(npz_filepath):
+    data = np.load(npz_filepath)
+    
+    freqs_mhz = data['freqs_mhz']
+    za = data['zenith_angle']
+    az = data['azimuth_angle']
+    abs_dir_dbi = data['abs_dir_dbi']
+
+    return abs_dir_dbi, freqs_mhz, za, az
+
+
+def read_from_txt(filepath,
+                  cst_i=False):
+    file = np.loadtxt(filepath, skiprows=2)
+    original_thetas = file[:,0]
+    original_phis = file[:,1] # requires conversion if CST-I
+    theta, phi = [], []
+
+    if cst_i:
+        for theta_angle, phi_angle in zip(original_thetas, original_phis): # coordinate transformation
+            p, t = convert_spherical_coords(phi_angle, theta_angle)
+            theta.append(t)
+            phi.append(p)
+    else:
+        theta, phi = original_thetas, original_phis # CST-T case
+
+    za = np.deg2rad(theta)
+    az = np.deg2rad(phi)
+    unique_theta = np.unique(theta)
+    unique_phi = np.unique(phi)
+    dir_dbi = file[:,2]
+    linear = 10**(dir_dbi/10)
+        #reshape the linear list into an array based on the za and az , sort into rows of constant za
+
+    za = np.deg2rad(unique_theta)
+    az = np.deg2rad(unique_phi)
+
+    phi_to_index = {phi: i for i,phi in enumerate(unique_phi)}
+    theta_to_index = {theta:i for i, theta in enumerate(unique_theta)}
+
+    linear_array = np.zeros((za.size, az.size))
+
+    for val, t, p in zip(linear, theta, phi):
+        theta_i = theta_to_index[t]
+        phi_i = phi_to_index[p]
+        linear_array[theta_i, phi_i] = val
+
+    if cst_i:
+        linear_array[0,:] = linear_array[0,0]
+
+    return linear_array, za, az
+
+
+def get_UV_beam_from_txt(filepath,
+                         cst_i=False,
+                         feedname='',
+                         feedversion='',
+                         model_name='', 
+                         model_version='' ,
+                         telescope_name='',
+                         centre_freq='70e6'):
+    """
+    Returns a uvbeam object for a given frequency based on the filepath of the .txt file produces in the CST simulation
+    Input:
+        filepath: (str) Filepath of the .txt string
+    Output:
+        uvb: (uvBeam object) 
+    # """
+
+    linear_array, za, az = read_from_txt(filepath=filepath, cst_i=cst_i)
+
+    uvb = create_uvb_obj(linear_array=linear_array, az=az, za=za, cst_i=cst_i)
+    
 
     return uvb
 
